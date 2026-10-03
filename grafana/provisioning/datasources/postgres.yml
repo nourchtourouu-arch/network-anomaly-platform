@@ -1,0 +1,38 @@
+# grafana/provisioning/datasources/postgres.yml
+#
+# Auto-provisions the PostgreSQL data source Grafana connects to for the SOC dashboard.
+# Grafana reads this on startup — no manual "Add data source" click needed.
+#
+# Requires the read-only role from sql/db-setup.sql to already exist (run that first),
+# and GRAFANA_RO_PASSWORD set to the same password you gave it there — either via
+# `\password grafana_ro`, or `-v grafana_ro_password=...` (see sql/db-setup.sql).
+# Add to docker-compose.yml, grafana service:
+#   environment:
+#     GRAFANA_RO_PASSWORD: ${GRAFANA_RO_PASSWORD}
+# and to your .env (untracked — add .env to .gitignore):
+#   GRAFANA_RO_PASSWORD=change_me
+#
+# Adjust url/database below to match your compose service name and POSTGRES_DB.
+
+apiVersion: 1
+
+datasources:
+  - name: PostgreSQL
+    uid: anomaly-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: anomaly_db
+    user: grafana_ro
+    isDefault: true
+    editable: false
+    jsonData:
+      database: anomaly_db
+      sslmode: disable # local demo only — use verify-full with a real deployment
+      postgresVersion: 1600
+      timescaledb: false
+      maxOpenConns: 5
+      maxIdleConns: 5
+      connMaxLifetime: 14400
+    secureJsonData:
+      password: ${GRAFANA_RO_PASSWORD}

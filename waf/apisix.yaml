@@ -1,0 +1,58 @@
+# ── APISIX Routes & Security Rules ────────────────────────────────────────
+
+routes:
+  # ── Main route with WAF protection ──────────────────────────────────────
+  - uri: /*
+    id: 1
+    name: protected-route
+    upstream_id: 1
+    plugins:
+      # Rate limiting : max 100 requests per minute per IP
+      limit-count:
+        count: 100
+        time_window: 60
+        key: remote_addr
+        rejected_code: 429
+        rejected_msg: "Too many requests - possible DDoS detected"
+
+      # Block suspicious URIs (SQL injection, path traversal)
+      uri-blocker:
+        block_rules:
+          - ".*\\.php$"
+          - ".*\\.asp$"
+          - ".*etc/passwd.*"
+          - ".*union.*select.*"
+          - ".*<script>.*"
+          - ".*\\.\\./.*"
+        rejected_code: 403
+
+      # Block known malicious IPs
+      ip-restriction:
+        whitelist: []
+        blacklist:
+          - "10.0.0.99"
+          - "185.220.101.5"
+          - "45.33.32.156"
+          - "198.51.100.1"
+        message: "Your IP has been blocked - suspicious activity detected"
+
+      # Prometheus metrics
+      prometheus: {}
+
+  # ── Health check route ───────────────────────────────────────────────────
+  - uri: /health
+    id: 2
+    name: health-check
+    upstream_id: 1
+    plugins:
+      prometheus: {}
+
+upstreams:
+  # ── Backend upstream ─────────────────────────────────────────────────────
+  - id: 1
+    name: backend
+    type: roundrobin
+    nodes:
+      "127.0.0.1:8080": 1
+
+#END

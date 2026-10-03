@@ -1,0 +1,135 @@
+services:
+
+  # ── MongoDB Replica Set (required for CDC Change Streams) ──────────────
+  mongo1:
+    image: mongo:7
+    container_name: mongo1
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+    networks:
+      - anomaly-net
+    restart: unless-stopped
+
+  # ── MongoDB Replica Set initializer ───────────────────────────────────
+  mongo-init:
+    image: mongo:7
+    container_name: mongo-init
+    depends_on:
+      - mongo1
+    networks:
+      - anomaly-net
+    restart: on-failure
+    command: >
+      mongosh --host mongo1:27017 --eval
+      "rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo1:27017'}]})"
+
+  # ── PostgreSQL (analytical storage) ───────────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - anomaly-net
+    restart: unless-stopped
+
+  # ── Log Generator (simulates network traffic) ──────────────────────────
+  generator:
+    build: ./generator
+    container_name: generator
+    depends_on:
+      - mongo-init
+    networks:
+      - anomaly-net
+    restart: unless-stopped
+
+  # ── CDC Pipeline (MongoDB → PostgreSQL) ───────────────────────────────
+  cdc:
+    build: ./cdc
+    container_name: cdc
+    env_file: .env
+    volumes:
+      - cdc_state:/app/state
+    depends_on:
+      - mongo-init
+      - postgres
+    networks:
+      - anomaly-net
+    restart: unless-stopped
+
+  # ── Grafana (SOC dashboard) ────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    env_file: .env
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GRAFANA_RO_PASSWORD: ${GRAFANA_RO_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - anomaly-net
+    restart: unless-stopped
+
+  # ── etcd (required by APISIX) ─────────────────────────────────────────
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.0
+    container_name: etcd
+    command:
+      - etcd
+      - --name=etcd0
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://etcd:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=etcd0=http://etcd:2380
+    ports:
+      - "2379:2379"
+    volumes:
+      - etcd_data:/etcd-data
+    networks:
+      - anomaly-net
+    restart: unless-stopped
+
+  # ── APISIX (WAF Gateway) ───────────────────────────────────────────────
+  apisix:
+    image: apache/apisix:3.9.0-debian
+    container_name: apisix
+    env_file: .env
+    ports:
+      - "9080:9080"
+      - "9443:9443"
+      - "9092:9092"
+    volumes:
+      - ./waf/apisix.yaml:/usr/local/apisix/conf/apisix.yaml
+      - ./waf/config.yaml:/usr/local/apisix/conf/config.yaml
+    depends_on:
+      - etcd
+    networks:
+      - anomaly-net
+    restart: unless-stopped
+
+volumes:
+  mongo1_data:
+  postgres_data:
+  grafana_data:
+  etcd_data:
+  cdc_state:
+
+networks:
+  anomaly-net:
+    driver: bridge
