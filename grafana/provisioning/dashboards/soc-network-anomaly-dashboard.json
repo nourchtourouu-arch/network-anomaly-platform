@@ -44,13 +44,13 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**SOC · Network Anomaly Overview** — all times UTC · anomalies are model *detections*, not confirmed incidents."
+        "content": "**SOC \u00b7 Network Anomaly Overview** \u2014 all times UTC \u00b7 traffic is synthetically labeled \u2014 no live detection engine yet."
       }
     },
     {
       "id": 2,
       "type": "row",
-      "title": "Live status — independent of the time range",
+      "title": "Live status \u2014 independent of the time range",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -64,7 +64,7 @@
       "id": 3,
       "type": "stat",
       "title": "Open Incidents",
-      "description": "Anomalies not yet resolved (resolved IS NOT TRUE), all time. Honors the Severity and Anomaly type filters. cdc_pipeline.py auto-resolves anything older than 30 min, so this plateaus rather than growing forever — simulated at your generator's rate (1/s, 15% anomalies): steady state ≈ 250-300. Thresholds orange ≥ 200, red ≥ 350 flag a real backlog (e.g. the auto-resolve thread died), not normal running.",
+      "description": "Anomalies not yet resolved (resolved IS NOT TRUE), all time. Honors the Severity and Anomaly type filters. Thresholds are heuristics (orange \u2265 10, red \u2265 50): tune them to your own baseline.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -118,11 +118,11 @@
               },
               {
                 "color": "orange",
-                "value": 200
+                "value": 10
               },
               {
                 "color": "red",
-                "value": 350
+                "value": 50
               }
             ]
           },
@@ -134,8 +134,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Open · High",
-      "description": "Unresolved high-severity anomalies, all time. Ignores the Severity filter by design (honors Anomaly type). SEVERITY_MAP now maps both ddos and data_exfiltration to high, so this is no longer rare — simulated steady state ≈ 120-150 given the 30 min auto-resolve window. Thresholds orange ≥ 100, red ≥ 180.",
+      "title": "Open \u00b7 High",
+      "description": "Unresolved high-severity anomalies, all time. Ignores the Severity filter by design (honors Anomaly type). Any value \u2265 1 is red.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -185,12 +185,8 @@
                 "value": null
               },
               {
-                "color": "orange",
-                "value": 100
-              },
-              {
                 "color": "red",
-                "value": 180
+                "value": 1
               }
             ]
           },
@@ -203,7 +199,7 @@
       "id": 5,
       "type": "stat",
       "title": "Oldest Open",
-      "description": "Age of the oldest unresolved anomaly (filters apply). With the 30 min auto-resolve in cdc_pipeline.py, this should almost never exceed ~31-32 min in normal operation — effectively a health check on that background thread rather than a backlog-age SLA. Orange ≥ 25 min, red ≥ 35 min means it's likely stuck or dead.",
+      "description": "Age of the oldest unresolved anomaly (filters apply). Orange after 1 h, red after 24 h: align with your triage SLA.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -266,11 +262,11 @@
               },
               {
                 "color": "orange",
-                "value": 1500
+                "value": 3600
               },
               {
                 "color": "red",
-                "value": 2100
+                "value": 86400
               }
             ]
           },
@@ -420,7 +416,7 @@
       "id": 8,
       "type": "stat",
       "title": "Ingestion Lag",
-      "description": "Age of the newest row in network_logs. If orange or red, every other panel is stale. STALE = no rows in the last 24 h. Thresholds: orange ≥ 60 s, red ≥ 300 s.",
+      "description": "Age of the newest row in network_logs. If orange or red, every other panel is stale. STALE = no rows in the last 24 h. Thresholds: orange \u2265 60 s, red \u2265 300 s.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -767,8 +763,8 @@
     {
       "id": 14,
       "type": "stat",
-      "title": "Δ vs Previous",
-      "description": "Change against the immediately preceding window of equal length. n/a when that window has fewer than 10 anomalies (a percentage on a tiny baseline is noise, e.g. after an ingestion gap). Large swings are normal on a system that has only run a short time or generates traffic in bursts. Orange ≥ +10 %, red ≥ +50 % (heuristic).",
+      "title": "\u0394 vs Previous",
+      "description": "Change against the immediately preceding window of equal length. n/a when that window has fewer than 10 anomalies (a percentage on a tiny baseline is noise, e.g. after an ingestion gap). Large swings are normal on a system that has only run a short time or generates traffic in bursts. Orange \u2265 +10 %, red \u2265 +50 % (heuristic).",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -922,7 +918,7 @@
     {
       "id": 17,
       "type": "table",
-      "title": "Open Incident Queue — highest severity first",
+      "title": "Open Incident Queue \u2014 highest severity first",
       "description": "Unresolved anomalies, all time (filters apply): high severity first, then oldest first. Max 50 rows; description truncated to 200 characters. Free-text fields originate from network traffic: treat them as untrusted.",
       "gridPos": {
         "h": 8,
@@ -1152,7 +1148,7 @@
     {
       "id": 19,
       "type": "timeseries",
-      "title": "Traffic — Allowed vs Blocked",
+      "title": "Traffic \u2014 Allowed vs Blocked",
       "description": "Requests per time bucket (min 1 m). Blocked uses the right axis. Empty buckets are filled with 0, so an ingestion gap shows as a flat line rather than a misleading slope.",
       "gridPos": {
         "h": 8,
@@ -1841,7 +1837,7 @@
     {
       "id": 28,
       "type": "table",
-      "title": "Anomaly Log — selected period",
+      "title": "Anomaly Log \u2014 selected period",
       "description": "Latest 200 detections in the period (filters apply), newest first. Free-text is truncated and untrusted.",
       "gridPos": {
         "h": 10,
