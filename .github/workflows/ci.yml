@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  # Catches real bugs (syntax errors, undefined names) without failing the
+  # build over pure style preferences — a portfolio CI should be a quality
+  # gate, not a style nitpicker.
+  lint-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install flake8
+        run: pip install flake8
+
+      - name: Check for syntax errors and undefined names
+        run: flake8 cdc/ generator/ --select=E9,F63,F7,F82 --show-source
+
+      - name: Verify files compile
+        run: |
+          python -m py_compile cdc/cdc_pipeline.py
+          python -m py_compile generator/log_generator.py
+
+  validate-configs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate all YAML files parse correctly
+        run: |
+          python - <<'PY'
+          import glob, sys, yaml
+
+          files = sorted(set(glob.glob("**/*.yml", recursive=True) + glob.glob("**/*.yaml", recursive=True)))
+          failed = False
+          for f in files:
+              try:
+                  with open(f) as fh:
+                      yaml.safe_load(fh)
+                  print(f"OK    {f}")
+              except Exception as e:
+                  print(f"FAIL  {f}: {e}")
+                  failed = True
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: Validate Grafana dashboard JSON parses correctly
+        run: |
+          python -c "import json; json.load(open('grafana/provisioning/dashboards/soc-network-anomaly-dashboard.json')); print('OK    grafana dashboard JSON')"
+
+  build-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build CDC pipeline image
+        run: docker build -t anomaly-cdc:ci ./cdc
+
+      - name: Build log generator image
+        run: docker build -t anomaly-generator:ci ./generator
+
+  validate-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from the tracked template
+        run: cp .env.example .env
+
+      - name: Validate docker-compose.yml resolves correctly
+        run: docker compose config --quiet
