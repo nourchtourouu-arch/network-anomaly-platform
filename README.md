@@ -79,6 +79,7 @@ Edit `.env` and set values for all required variables:
 | `GRAFANA_ADMIN_PASSWORD` | Grafana administrator password |
 | `GRAFANA_RO_PASSWORD` | Password assigned to the read-only `grafana_ro` role |
 | `APISIX_ADMIN_KEY` | Admin API key for the APISIX gateway. Must be rotated from the default before exposing the admin API beyond localhost. |
+| `SLACK_WEBHOOK_URL` | Optional. Incoming webhook URL for Slack alerting on high-severity anomalies (see [§5](#5-dashboard-design-notes)). Leave empty to disable — the pipeline runs normally either way. |
 
 No credentials are stored in source control. `.env` is excluded via `.gitignore`.
 
@@ -122,6 +123,8 @@ The Grafana dashboard is built to be time-range-correct and filterable, not a st
 - A dedicated **Live Status** row (open incident count, backlog age, ingestion lag) is intentionally independent of the selected time range, since operational status should not be hidden by a narrow window selection.
 - Grafana connects through the least-privilege `grafana_ro` role rather than the pipeline's read-write user.
 
+In addition to the dashboard, the CDC pipeline itself pushes a throttled Slack alert (one per 10-second window, at most) whenever it commits a high-severity anomaly — configured via the optional `SLACK_WEBHOOK_URL` variable. This is independent of Grafana's own alerting, which is not yet configured (see [Roadmap](#8-roadmap)).
+
 ---
 
 ## 6. Repository Structure
@@ -159,12 +162,14 @@ This project is a demonstration of the described patterns and is not hardened fo
 - `source_ip` fields in generated traffic are synthetic. In a real deployment behind a load balancer or reverse proxy, IP attribution requires explicit `X-Forwarded-For` handling and a trusted proxy allowlist.
 - Anomaly classification is rule-based (static thresholds and patterns), not model-driven. See [Roadmap](#8-roadmap).
 - TLS is not configured between internal services; all inter-service traffic is unencrypted, which is acceptable for local demonstration only.
+- `waf/apisix.yaml` defines the intended WAF routes (rate limiting, IP blocklist, path-based filtering) as declarative reference configuration. In the current deployment, APISIX runs in `traditional` mode with etcd as the config store, so this file is not read at runtime — the routes must be provisioned into etcd through the Admin API before the gateway actually enforces them. See [Roadmap](#8-roadmap).
 
 ---
 
 ## 8. Roadmap
 
 - Replace rule-based detection with a trained anomaly-scoring model
+- Provision `waf/apisix.yaml`'s routes into etcd via the APISIX Admin API so the WAF actively enforces rate limiting and IP blocking
 - Add Grafana Alerting rules with Slack/email notification channels
 - Add CI/CD pipeline (lint, build, image publishing) via GitHub Actions
 - Add a cloud deployment variant using managed MongoDB and PostgreSQL

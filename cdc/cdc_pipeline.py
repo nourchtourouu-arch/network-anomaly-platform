@@ -12,6 +12,9 @@ Resilience notes:
   crashing the whole process and losing the in-memory stream position.
 - A lightweight background pass periodically marks old anomalies as resolved,
   so a long-running demo doesn't show the exact same open incidents forever.
+- A Slack alert is sent for each high-severity anomaly, throttled to avoid
+  flooding the channel. It is fully optional: with no SLACK_WEBHOOK_URL set,
+  alerting is skipped with no error and no retries.
 """
 
 import os
@@ -19,6 +22,8 @@ import json
 import time
 import logging
 import threading
+import urllib.request
+import urllib.error
 import psycopg2
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
@@ -58,6 +63,20 @@ SEVERITY_MAP = {
 # it, purely to keep a long-running demo dashboard from looking static.
 AUTO_RESOLVE_AFTER_MINUTES = 30
 AUTO_RESOLVE_INTERVAL_SECONDS = 60
+
+# ── Slack alerting (optional) ──────────────────────────────────────────────
+# An unset SLACK_WEBHOOK_URL disables alerting entirely — no error, no
+# retries — so the pipeline stays fully functional on a fresh checkout
+# where no Slack workspace has been configured yet.
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+SLACK_ALERT_SEVERITIES = {"high"}
+
+# Minimum time between two Slack messages. The synthetic generator can
+# produce a burst of dozens of high-severity anomalies within seconds;
+# without a floor, a single burst would flood the channel and risk hitting
+# Slack's own rate limit. One alert per burst is enough to notify a human —
+# the dashboard stays the source of truth for the full incident count.
+SLACK_MIN_INTERVAL_SECONDS = 10
 
 
 # ── PostgreSQL connection ──────────────────────────────────────────────────
@@ -141,8 +160,8 @@ def insert_log(cursor, doc: dict):
 
 
 # ── Insert anomaly into PostgreSQL ─────────────────────────────────────────
-def insert_anomaly(cursor, doc: dict):
-    """Insert a detected anomaly into PostgreSQL."""
+def insert_anomaly(cursor, doc: dict) -> str:
+    """Insert a detected anomaly into PostgreSQL. Returns the assigned severity."""
     anomaly_type = doc.get("anomaly_type")
     severity = SEVERITY_MAP.get(anomaly_type, "medium")
 
@@ -157,6 +176,56 @@ def insert_anomaly(cursor, doc: dict):
         severity,
         f"Detected {anomaly_type} from {doc.get('source_ip')}",
     ))
+
+    return severity
+
+
+# ── Slack alerting ──────────────────────────────────────────────────────────
+_last_slack_alert_ts = 0.0
+_slack_lock = threading.Lock()
+
+
+def send_slack_alert(anomaly_type: str, source_ip: str, severity: str, detected_at) -> None:
+    """
+    Post a one-line alert to Slack for a high-severity anomaly.
+
+    Fails silently (logged as a warning) on any network or Slack-side error:
+    a misconfigured or unreachable webhook must never interrupt replication,
+    which is the pipeline's actual job. Throttled to at most one message
+    every SLACK_MIN_INTERVAL_SECONDS to avoid flooding the channel when the
+    generator produces a burst of anomalies in a short window.
+    """
+    if not SLACK_WEBHOOK_URL:
+        return
+
+    global _last_slack_alert_ts
+    with _slack_lock:
+        now = time.time()
+        if now - _last_slack_alert_ts < SLACK_MIN_INTERVAL_SECONDS:
+            return
+        _last_slack_alert_ts = now
+
+    payload = {
+        "text": (
+            f":rotating_light: *High-severity anomaly detected*\n"
+            f"• *Type:* `{anomaly_type}`\n"
+            f"• *Source IP:* `{source_ip}`\n"
+            f"• *Severity:* `{severity}`\n"
+            f"• *Detected at:* {detected_at} UTC"
+        )
+    }
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        SLACK_WEBHOOK_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            if response.status >= 300:
+                logger.warning(f"[slack] Unexpected response status: {response.status}")
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+        logger.warning(f"[slack] Failed to send alert: {e}")
 
 
 # ── Background auto-resolve pass ───────────────────────────────────────────
@@ -179,7 +248,7 @@ def auto_resolve_loop():
                         UPDATE anomalies
                         SET resolved = TRUE
                         WHERE resolved IS NOT TRUE
-                          AND (detected_at AT TIME ZONE 'UTC') < NOW() - (%s * INTERVAL '1 minute')
+                          AND detected_at < NOW() - (%s * INTERVAL '1 minute')
                     """, (AUTO_RESOLVE_AFTER_MINUTES,))
                     resolved_count = cursor.rowcount
                 conn.commit()
@@ -218,11 +287,13 @@ def run():
             for change in stream:
                 doc = change.get("fullDocument", {})
 
+                severity = None
+
                 try:
                     with pg_conn.cursor() as cursor:
                         insert_log(cursor, doc)
                         if doc.get("is_anomaly"):
-                            insert_anomaly(cursor, doc)
+                            severity = insert_anomaly(cursor, doc)
                     pg_conn.commit()
 
                 except psycopg2.Error as e:
@@ -237,6 +308,16 @@ def run():
                     count += 1
                     label = f"[ANOMALY:{doc.get('anomaly_type')}]" if doc.get("is_anomaly") else "[NORMAL]"
                     logger.info(f"#{count:05d} {label} replicated → PostgreSQL")
+
+                    # Only alert on anomalies that were actually committed —
+                    # never on a document that failed to persist.
+                    if severity in SLACK_ALERT_SEVERITIES:
+                        send_slack_alert(
+                            doc.get("anomaly_type"),
+                            doc.get("source_ip"),
+                            severity,
+                            doc.get("timestamp"),
+                        )
 
                 # Persist the resume token after every change, successful or
                 # not, so a restart never reprocesses or silently skips
