@@ -1,5 +1,9 @@
 # Network Anomaly Detection Platform
 
+[![CI](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+
 A containerized Security Operations Center (SOC) reference platform for real-time network traffic ingestion, rule-based anomaly detection, and operational monitoring. The system demonstrates a Change Data Capture (CDC) pipeline from a document store to a relational analytical store, fronted by a live monitoring dashboard and protected by a WAF gateway.
 
 **Status:** Portfolio / demonstration project. Not intended for production deployment without the hardening steps described in [Security Considerations](#7-security-considerations).
@@ -131,24 +135,28 @@ In addition to the dashboard, the CDC pipeline itself pushes a throttled Slack a
 
 ```
 network-anomaly-platform/
-├── generator/              Traffic simulation service
+├── .github/
+│   └── workflows/
+│       └── ci.yml           Lint, config validation, image build
+├── generator/                Traffic simulation service
 │   ├── log_generator.py
 │   ├── requirements.txt
 │   └── Dockerfile
-├── cdc/                     CDC replication service
+├── cdc/                      CDC replication service (+ Slack alerting)
 │   ├── cdc_pipeline.py
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── sql/
-│   ├── init.sql             Schema definition
-│   └── db-setup.sql         Read-only role and index provisioning
+│   ├── init.sql              Schema definition
+│   └── db-setup.sql          Read-only role and index provisioning
 ├── grafana/
 │   └── provisioning/
-│       ├── datasources/     Auto-provisioned PostgreSQL connection
-│       └── dashboards/      Auto-provisioned dashboard definition
-├── waf/                     APISIX route and plugin configuration
+│       ├── datasources/      Auto-provisioned PostgreSQL connection
+│       └── dashboards/       Auto-provisioned dashboard definition
+├── waf/                      APISIX route and plugin configuration
 ├── docker-compose.yml
 ├── .env.example
+├── LICENSE
 └── README.md
 ```
 
@@ -170,16 +178,22 @@ This project is a demonstration of the described patterns and is not hardened fo
 
 - Replace rule-based detection with a trained anomaly-scoring model
 - Provision `waf/apisix.yaml`'s routes into etcd via the APISIX Admin API so the WAF actively enforces rate limiting and IP blocking
-- Add Grafana Alerting rules with Slack/email notification channels
-- Add CI/CD pipeline (lint, build, image publishing) via GitHub Actions
+- Add Grafana Alerting rules with Slack/email notification channels (complementary to the CDC pipeline's own Slack alerting, described in [§5](#5-dashboard-design-notes))
+- Extend the CI pipeline with automated integration tests against a running stack
 - Add a cloud deployment variant using managed MongoDB and PostgreSQL
 - Integrate an external threat intelligence feed (e.g., AbuseIPDB)
 - Add simulated incident resolution so long-running demos reflect closed incidents
 
 ---
 
-## 9. Author
+## 9. License
+
+Released under the [MIT License](LICENSE).
+
+---
+
+## 10. Author
 
 **Nour Chtourou** — M.Sc. Cloud & Network Engineering
 
-[LinkedIn](#) · [GitHub](#)
+[GitHub](https://github.com/nourchtourouu-arch) · [LinkedIn](#)
