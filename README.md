@@ -10,6 +10,17 @@ A containerized Security Operations Center (SOC) reference platform for real-tim
 
 ---
 
+![SOC Dashboard — Live Status and Incident Queue](docs/screenshots/dashboard-live-status.png)
+*Live status row (independent of the selected time range) and the open incident queue, highest severity first.*
+
+![SOC Dashboard — Trends and Breakdown](docs/screenshots/dashboard-trends-breakdown.png)
+*Allowed vs. blocked traffic over time, anomaly volume by type, and breakdowns by severity, protocol, source IP, and blocked port.*
+
+![SOC Dashboard — Anomaly Log](docs/screenshots/dashboard-anomaly-log.png)
+*Full anomaly log for the selected time range, filterable by severity and type.*
+
+---
+
 ## 1. System Overview
 
 The platform ingests simulated network traffic, replicates it through a CDC pipeline into an analytical database, and exposes the resulting dataset through a monitoring dashboard. A reverse proxy / WAF component demonstrates request-level traffic filtering independent of the data pipeline.
