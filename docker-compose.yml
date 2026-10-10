@@ -114,6 +114,7 @@ services:
       - "9080:9080"
       - "9443:9443"
       - "9092:9092"
+      - "127.0.0.1:9180:9180"
     volumes:
       - ./waf/apisix.yaml:/usr/local/apisix/conf/apisix.yaml
       - ./waf/config.yaml:/usr/local/apisix/conf/config.yaml

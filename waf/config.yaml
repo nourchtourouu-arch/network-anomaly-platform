@@ -18,6 +18,9 @@ deployment:
       - name: admin
         key: ${{APISIX_ADMIN_KEY}}
         role: admin
+    allow_admin:
+      - 127.0.0.0/24
+      - 172.16.0.0/12
   etcd:
     host:
       - "http://etcd:2379"

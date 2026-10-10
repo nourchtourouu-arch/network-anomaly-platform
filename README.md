@@ -68,7 +68,7 @@ flowchart LR
 
 - Docker Engine and Docker Compose v2
 - Minimum 2 GB of available RAM
-- Ports `3000`, `5432`, `9080`, `9092`, `9443`, `27017`, `2379` available on the host
+- Ports `3000`, `5432`, `9080`, `9092`, `9180`, `9443`, `27017`, `2379` available on the host
 
 ---
 
@@ -118,12 +118,22 @@ docker restart grafana
 
 This step is idempotent and safe to re-run.
 
+Provision the WAF routes (rate limiting, path blocking, IP blocking) into etcd through the APISIX Admin API — without this step, APISIX runs but enforces no rules:
+
+```bash
+set -a; source .env; set +a
+./waf/provision-routes.sh
+```
+
+Also idempotent: it applies the same route/upstream definitions on every run via fixed resource IDs.
+
 ### 4.4 Service Endpoints
 
 | Service | Endpoint | Authentication |
 |---|---|---|
 | Grafana dashboard | `http://localhost:3000` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
 | APISIX gateway | `http://localhost:9080` | — |
+| APISIX Admin API | `http://127.0.0.1:9180` | `X-API-KEY: APISIX_ADMIN_KEY`. Bound to localhost only (see [Security Considerations](#7-security-considerations)). |
 | PostgreSQL | `localhost:5432` | Values from `.env` |
 | MongoDB | `localhost:27017` | — |
 
@@ -181,14 +191,14 @@ This project is a demonstration of the described patterns and is not hardened fo
 - `source_ip` fields in generated traffic are synthetic. In a real deployment behind a load balancer or reverse proxy, IP attribution requires explicit `X-Forwarded-For` handling and a trusted proxy allowlist.
 - Anomaly classification is rule-based (static thresholds and patterns), not model-driven. See [Roadmap](#8-roadmap).
 - TLS is not configured between internal services; all inter-service traffic is unencrypted, which is acceptable for local demonstration only.
-- `waf/apisix.yaml` defines the intended WAF routes (rate limiting, IP blocklist, path-based filtering) as declarative reference configuration. In the current deployment, APISIX runs in `traditional` mode with etcd as the config store, so this file is not read at runtime — the routes must be provisioned into etcd through the Admin API before the gateway actually enforces them. See [Roadmap](#8-roadmap).
+- `waf/apisix.yaml` documents the intended WAF routes (rate limiting, IP blocklist, path-based filtering) as a human-readable reference. APISIX runs in `traditional` mode with etcd as the config store, so this file is never read at runtime — `waf/provision-routes.sh` is what actually pushes the equivalent rules into etcd via the Admin API (see [§4.3](#43-post-deployment-hardening)). Verified live: 100 req/min rate limiting (HTTP 429 past the threshold), blocked file-extension and path-traversal probes (HTTP 403/400).
+- The APISIX Admin API (port `9180`) is bound to `127.0.0.1` only in `docker-compose.yml`, not `0.0.0.0` — Docker's default would otherwise expose route-modification access to the local network. `waf/config.yaml`'s `allow_admin` list is intentionally broadened to include the Docker bridge subnet (`172.16.0.0/12`), since traffic from the host reaches the container under that range, not `127.0.0.1`; this is safe only because the host-level binding already blocks all non-local access.
 
 ---
 
 ## 8. Roadmap
 
 - Replace rule-based detection with a trained anomaly-scoring model
-- Provision `waf/apisix.yaml`'s routes into etcd via the APISIX Admin API so the WAF actively enforces rate limiting and IP blocking
 - Add Grafana Alerting rules with Slack/email notification channels (complementary to the CDC pipeline's own Slack alerting, described in [§5](#5-dashboard-design-notes))
 - Extend the CI pipeline with automated integration tests against a running stack
 - Add a cloud deployment variant using managed MongoDB and PostgreSQL
