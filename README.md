@@ -57,7 +57,7 @@ flowchart LR
 | Ingestion store | MongoDB (Replica Set) | 7.x |
 | CDC pipeline | Python, psycopg2 | 3.12 / 2.9.9 |
 | Analytical store | PostgreSQL | 16.x |
-| Visualization | Grafana | latest |
+| Visualization | Grafana | 13.2.2 |
 | Gateway / WAF | Apache APISIX | 3.9.0 |
 | Configuration store | etcd | 3.5.0 |
 | Orchestration | Docker Compose | — |
@@ -79,7 +79,7 @@ flowchart LR
 Clone the repository and create the environment file from the provided template:
 
 ```bash
-git clone https://github.com/<your-username>/network-anomaly-platform.git
+git clone https://github.com/nourchtourouu-arch/network-anomaly-platform.git
 cd network-anomaly-platform
 cp .env.example .env
 ```
@@ -215,6 +215,6 @@ Released under the [MIT License](LICENSE).
 
 ## 10. Author
 
-**Nour Chtourou** — M.Sc. Cloud & Network Engineering
+**Nour Chtourou** — DevSecOps | Data Pipelines & Security Monitoring
 
-[GitHub](https://github.com/nourchtourouu-arch) · [LinkedIn](#)
+[GitHub](https://github.com/nourchtourouu-arch) · [LinkedIn](https://www.linkedin.com/in/nour-c-548b6a352/)
