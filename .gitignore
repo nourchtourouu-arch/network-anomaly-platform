@@ -1,3 +1,5 @@
 .env
 __pycache__/
 *.pyc
+grafana/provisioning/alerting/slack.yml
+*.swp

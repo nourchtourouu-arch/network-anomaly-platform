@@ -1,0 +1,35 @@
+# grafana/provisioning/alerting/slack.yml.example
+#
+# OPTIONAL: route Grafana alert notifications to Slack.
+#
+# Grafana only loads *.yml / *.yaml files, so this .example file is ignored
+# on purpose. Without it, the rules in rules.yml still evaluate and show up in
+# Alerting > Active notifications; they just are not forwarded to Slack.
+#
+# Why opt-in: a Slack contact point with an empty webhook URL is rejected by
+# Grafana at provisioning time, which would stop Grafana from starting for
+# anyone who keeps SLACK_WEBHOOK_URL empty (the documented default).
+#
+# To enable:
+#   1. Set SLACK_WEBHOOK_URL in .env (the grafana service loads .env).
+#   2. cp grafana/provisioning/alerting/slack.yml.example \
+#        grafana/provisioning/alerting/slack.yml
+#   3. docker restart grafana
+#
+# The file contains no secret (the URL comes from the environment), but the
+# enabled copy (slack.yml) is gitignored so a clone never loads it by accident.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: slack-soc-alerts
+    receivers:
+      - uid: slack-soc-alerts
+        type: slack
+        settings:
+          url: $SLACK_WEBHOOK_URL
+
+policies:
+  - orgId: 1
+    receiver: slack-soc-alerts

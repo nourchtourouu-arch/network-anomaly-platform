@@ -1,0 +1,179 @@
+apiVersion: 1
+groups:
+    - orgId: 1
+      name: soc-1m
+      folder: SOC Alerts
+      interval: 1m
+      rules:
+        - uid: bg0zof6m3dzi8a
+          title: High-severity anomaly spike
+          condition: C
+          data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: anomaly-postgres
+              model:
+                dataset: anomaly_db
+                editorMode: code
+                format: table
+                intervalMs: 1000
+                maxDataPoints: 43200
+                rawQuery: true
+                rawSql: "SELECT COUNT(*) AS value FROM anomalies\r\nWHERE severity = 'high' AND detected_at > NOW() - INTERVAL '5 minutes'"
+                refId: A
+                sql:
+                    columns:
+                        - parameters: []
+                          type: function
+                        - parameters: []
+                          type: function
+                    groupBy:
+                        - property:
+                            type: string
+                          type: groupBy
+                    limit: 50
+            - refId: B
+              queryType: expression
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params: []
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params: []
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                reducer: last
+                refId: B
+                type: reduce
+            - refId: C
+              queryType: expression
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 5
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: B
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: Error
+          for: 2m
+          keepFiringFor: 2m
+          annotations:
+            description: Watches the anomalies table for a spike in high-severity events (DDoS, data exfiltration).
+            summary: More than 5 high-severity anomalies detected in the last 5 minutes
+          isPaused: false
+        - uid: cg3wq2lxiodfkc
+          title: CDC pipeline stale
+          condition: C
+          data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: anomaly-postgres
+              model:
+                dataset: anomaly_db
+                editorMode: code
+                format: table
+                intervalMs: 1000
+                maxDataPoints: 43200
+                rawQuery: true
+                rawSql: "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(\"timestamp\"))) AS value\r\nFROM network_logs"
+                refId: A
+                sql:
+                    columns:
+                        - parameters: []
+                          type: function
+                    groupBy:
+                        - property:
+                            type: string
+                          type: groupBy
+                    limit: 50
+            - refId: B
+              queryType: expression
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params: []
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params: []
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                reducer: last
+                refId: B
+                type: reduce
+            - refId: C
+              queryType: expression
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 120
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: B
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: Error
+          for: 2m
+          annotations:
+            summary: No new network_logs row in over 2 minutes — the CDC pipeline may be down.
+          isPaused: false
