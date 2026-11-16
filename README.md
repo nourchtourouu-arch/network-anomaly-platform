@@ -44,7 +44,7 @@ flowchart LR
 | MongoDB (Replica Set) | Primary ingestion store. Replica set mode is required to expose Change Streams. |
 | CDC Pipeline | Subscribes to MongoDB Change Streams and replicates each inserted document into PostgreSQL, with retry and exponential backoff on connection loss. |
 | PostgreSQL | Analytical store queried by the dashboard. Indexed for time-range and status-filter access patterns. |
-| Grafana | Visualization layer. Connects to PostgreSQL through a dedicated read-only role. |
+| Grafana | Visualization and alerting layer. Connects to PostgreSQL through a dedicated read-only role; alert rules are provisioned from files. |
 | APISIX + etcd | Gateway layer demonstrating rate limiting, IP-based blocking, and request filtering. Operates independently of the data pipeline described above. |
 
 ---
@@ -94,7 +94,7 @@ Edit `.env` and set values for all required variables:
 | `GRAFANA_ADMIN_PASSWORD` | Grafana administrator password |
 | `GRAFANA_RO_PASSWORD` | Password assigned to the read-only `grafana_ro` role |
 | `APISIX_ADMIN_KEY` | Admin API key for the APISIX gateway. Must be rotated from the default before exposing the admin API beyond localhost. |
-| `SLACK_WEBHOOK_URL` | Optional. Incoming webhook URL for Slack alerting on high-severity anomalies (see [§5](#5-dashboard-design-notes)). Leave empty to disable — the pipeline runs normally either way. |
+| `SLACK_WEBHOOK_URL` | Optional. Incoming webhook URL for Slack alerting on high-severity anomalies (see [§5](#5-dashboard-design-notes)). Leave empty to disable — the pipeline runs normally either way. Also read by Grafana if you enable the optional Slack routing (see [§5](#5-dashboard-design-notes)). |
 
 No credentials are stored in source control. `.env` is excluded via `.gitignore`.
 
@@ -148,7 +148,19 @@ The Grafana dashboard is built to be time-range-correct and filterable, not a st
 - A dedicated **Live Status** row (open incident count, backlog age, ingestion lag) is intentionally independent of the selected time range, since operational status should not be hidden by a narrow window selection.
 - Grafana connects through the least-privilege `grafana_ro` role rather than the pipeline's read-write user.
 
-In addition to the dashboard, the CDC pipeline itself pushes a throttled Slack alert (one per 10-second window, at most) whenever it commits a high-severity anomaly — configured via the optional `SLACK_WEBHOOK_URL` variable. This is independent of Grafana's own alerting, which is not yet configured (see [Roadmap](#8-roadmap)).
+Alerting works at two levels:
+
+- **Per event (CDC pipeline).** The pipeline pushes a throttled Slack alert (one per 10-second window, at most) whenever it commits a high-severity anomaly — configured via the optional `SLACK_WEBHOOK_URL` variable.
+- **Trend and health (Grafana).** Two alert rules are provisioned from `grafana/provisioning/alerting/rules.yml` and evaluated every minute: `High-severity anomaly spike` (more than 5 high-severity anomalies in 5 minutes) and `CDC pipeline stale` (no new row in `network_logs` for over 2 minutes — an outage the per-event alert cannot see, since it only fires when events arrive).
+
+Routing the Grafana rules to Slack is opt-in: Grafana refuses to start with a Slack contact point whose webhook URL is empty, so it ships as an example file rather than being loaded by default.
+
+```bash
+cp grafana/provisioning/alerting/slack.yml.example grafana/provisioning/alerting/slack.yml
+docker restart grafana
+```
+
+Without it, the rules still evaluate and show up under **Alerting → Active notifications** in Grafana.
 
 ---
 
@@ -173,7 +185,8 @@ network-anomaly-platform/
 ├── grafana/
 │   └── provisioning/
 │       ├── datasources/      Auto-provisioned PostgreSQL connection
-│       └── dashboards/       Auto-provisioned dashboard definition
+│       ├── dashboards/       Auto-provisioned dashboard definition
+│       └── alerting/         Alert rules (+ optional Slack routing)
 ├── waf/                      APISIX route and plugin configuration
 ├── docker-compose.yml
 ├── .env.example
@@ -199,7 +212,6 @@ This project is a demonstration of the described patterns and is not hardened fo
 ## 8. Roadmap
 
 - Replace rule-based detection with a trained anomaly-scoring model
-- Add Grafana Alerting rules with Slack/email notification channels (complementary to the CDC pipeline's own Slack alerting, described in [§5](#5-dashboard-design-notes))
 - Extend the CI pipeline with automated integration tests against a running stack
 - Add a cloud deployment variant using managed MongoDB and PostgreSQL
 - Integrate an external threat intelligence feed (e.g., AbuseIPDB)
