@@ -6,7 +6,7 @@ services:
     container_name: mongo1
     command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"   # localhost only (no auth in this demo)
     volumes:
       - mongo1_data:/data/db
     networks:
@@ -22,9 +22,11 @@ services:
     networks:
       - anomaly-net
     restart: on-failure
+    # Idempotent: on every `up` after the first, rs.initiate fails with "already
+    # initialized" and `restart: on-failure` retries it forever.
     command: >
-      mongosh --host mongo1:27017 --eval
-      "rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo1:27017'}]})"
+      mongosh --host mongo1:27017 --quiet --eval
+      "try { rs.status() } catch (e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo1:27017'}]}) }"
 
   # ── PostgreSQL (analytical storage) ───────────────────────────────────
   postgres:
@@ -36,7 +38,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # localhost only
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -70,7 +72,7 @@ services:
 
   # ── Grafana (SOC dashboard) ────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.2
     container_name: grafana
     env_file: .env
     ports:
@@ -98,7 +100,7 @@ services:
       - --listen-peer-urls=http://0.0.0.0:2380
       - --initial-cluster=etcd0=http://etcd:2380
     ports:
-      - "2379:2379"
+      - "127.0.0.1:2379:2379"   # localhost only (no auth in this demo)
     volumes:
       - etcd_data:/etcd-data
     networks:
