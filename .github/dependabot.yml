@@ -1,5 +1,7 @@
 version: 2
 updates:
+  # Python dependencies: patch and minor updates flow; they are validated by the
+  # integration workflow (it rebuilds the images and replays the whole pipeline).
   - package-ecosystem: "pip"
     directory: "/cdc"
     schedule:
@@ -12,20 +14,37 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
+  # Base images: the python:3.12-slim line is kept on purpose (the CDC's psycopg2-binary
+  # has no wheel for newer interpreters yet). Moving to a new Python is a manual decision.
   - package-ecosystem: "docker"
     directory: "/cdc"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: "docker"
     directory: "/generator"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
+  # Infrastructure images (Grafana, APISIX, etcd): only patch releases are proposed.
+  # A new minor/major needs a manual test of the dashboards, alert rules and WAF routes.
   - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "grafana/grafana"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "apache/apisix"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "coreos/etcd"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
