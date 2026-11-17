@@ -1,0 +1,9 @@
+# .gitleaks.toml — read by .github/workflows/security.yml
+title = "network-anomaly-platform"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "APISIX's publicly documented default admin key, kept in waf/config.yaml for the local demo (see README section 7). Rotate it before any real deployment."
+regexes = ['''edd1c9f034335f136f87ad84b625c8f1''']

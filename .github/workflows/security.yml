@@ -1,0 +1,77 @@
+name: Security
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  schedule:
+    - cron: "30 4 * * 1"   # weekly: new CVEs appear in base images even when the code is unchanged
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Third-party code is pinned by commit SHA or by checksum, never by a mutable tag:
+# in March 2026, 75 of 76 trivy-action tags were force-pushed to malicious commits.
+
+jobs:
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0            # full history: a secret deleted later is still a leaked secret
+          persist-credentials: false
+
+      - name: Install gitleaks 8.30.1 (pinned, checksum-verified)
+        run: |
+          TGZ="gitleaks_8.30.1_linux_x64.tar.gz"
+          curl -fsSL -o "$TGZ" "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/${TGZ}"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  ${TGZ}" | sha256sum -c -
+          tar -xzf "$TGZ" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+
+      - name: Scan the whole git history
+        run: gitleaks git --config .gitleaks.toml --redact --verbose --no-banner .
+
+  images:
+    name: Image scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the images
+        run: |
+          docker build -t anomaly-cdc:scan ./cdc
+          docker build -t anomaly-generator:scan ./generator
+
+      # Pinned at 0.69.3, below the releases published during the March 2026 Trivy
+      # supply-chain compromise. Bump only after checking the maintainers' advisory.
+      - name: Install Trivy 0.69.3 (pinned, checksum-verified)
+        run: |
+          DEB="trivy_0.69.3_Linux-64bit.deb"
+          curl -fsSL -o "$DEB" "https://github.com/aquasecurity/trivy/releases/download/v0.69.3/${DEB}"
+          echo "a484057aafde31089cf2558ca0f79a4bc835125a5ee6834183a5bcf0735af358  ${DEB}" | sha256sum -c -
+          sudo dpkg -i "$DEB"
+          trivy --version
+
+      - name: Report HIGH and CRITICAL vulnerabilities (informational)
+        run: |
+          for img in anomaly-cdc:scan anomaly-generator:scan; do
+            trivy image --no-progress --ignore-unfixed --severity HIGH,CRITICAL --exit-code 0 "$img"
+          done
+
+      - name: Fail on CRITICAL vulnerabilities that have a fix
+        run: |
+          rc=0
+          for img in anomaly-cdc:scan anomaly-generator:scan; do
+            trivy image --no-progress --skip-db-update --ignore-unfixed --severity CRITICAL --exit-code 1 "$img" || rc=1
+          done
+          exit $rc
+
+      - name: Dockerfile misconfigurations (informational)
+        run: trivy config --severity HIGH,CRITICAL --exit-code 0 .
