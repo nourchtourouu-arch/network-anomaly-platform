@@ -1,6 +1,8 @@
 # Network Anomaly Detection Platform
 
 [![CI](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/ci.yml)
+[![Integration](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/integration.yml/badge.svg)](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/integration.yml)
+[![Security](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/security.yml/badge.svg)](https://github.com/nourchtourouu-arch/network-anomaly-platform/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 
@@ -53,9 +55,9 @@ flowchart LR
 
 | Layer | Technology | Version |
 |---|---|---|
-| Data generation | Python, PyMongo | 3.12 / 4.7.2 |
+| Data generation | Python, PyMongo | 3.12 / 4.20.0 |
 | Ingestion store | MongoDB (Replica Set) | 7.x |
-| CDC pipeline | Python, psycopg2 | 3.12 / 2.9.9 |
+| CDC pipeline | Python, psycopg2 | 3.12 / 2.9.13 |
 | Analytical store | PostgreSQL | 16.x |
 | Visualization | Grafana | 13.2.2 |
 | Gateway / WAF | Apache APISIX | 3.9.0 |
@@ -169,8 +171,11 @@ Without it, the rules still evaluate and show up under **Alerting → Active not
 ```
 network-anomaly-platform/
 ├── .github/
-│   └── workflows/
-│       └── ci.yml           Lint, config validation, image build
+│   ├── workflows/
+│   │   ├── ci.yml            Lint, config validation, image build
+│   │   ├── integration.yml   End-to-end pipeline test (stack up, CDC restart)
+│   │   └── security.yml      Secret scan (gitleaks), image scan (Trivy)
+│   └── dependabot.yml        Dependency update policy
 ├── generator/                Traffic simulation service
 │   ├── log_generator.py
 │   ├── requirements.txt
@@ -188,11 +193,28 @@ network-anomaly-platform/
 │       ├── dashboards/       Auto-provisioned dashboard definition
 │       └── alerting/         Alert rules (+ optional Slack routing)
 ├── waf/                      APISIX route and plugin configuration
+├── tests/
+│   └── integration.sh        Mongo → CDC → PostgreSQL test, run by CI
 ├── docker-compose.yml
 ├── .env.example
+├── .gitleaks.toml            Secret-scan configuration
 ├── LICENSE
 └── README.md
 ```
+
+### 6.1 Automated Checks
+
+Every push and pull request runs three GitHub Actions workflows:
+
+| Workflow | What it checks |
+|---|---|
+| `ci.yml` | Python lint (syntax errors and undefined names), YAML and dashboard-JSON validation, Docker image builds, `docker compose config`. |
+| `integration.yml` | Starts the real stack (MongoDB, CDC, generator, PostgreSQL) and verifies, end to end: the replica set initialises and `mongo-init` is idempotent; documents reach PostgreSQL with fresh timestamps and the expected severities; after a CDC restart, nothing inserted while it was down is lost or duplicated (resume-token persistence). On failure it prints the failing check and the service logs. |
+| `security.yml` | `gitleaks` scans the full git history for secrets. Trivy scans both images and fails on CRITICAL vulnerabilities that have a fix; HIGH findings and Dockerfile misconfigurations are reported without blocking. Also runs weekly, since new CVEs appear in unchanged base images. |
+
+Dependabot proposes weekly updates for Python dependencies, base images, Compose images and GitHub Actions. Every pull request runs the workflows above, and the integration test is what makes a `pymongo` or `psycopg2` bump safe to merge. Minor and major bumps of the Python base image, Grafana, APISIX and etcd are ignored on purpose: they need a manual test against the dashboards, alert rules and WAF routes.
+
+Third-party code in CI is pinned by commit SHA or by checksum, never by a mutable tag. In March 2026, most `trivy-action` tags and a Trivy release were compromised in a [supply-chain attack](https://snyk.io/articles/trivy-github-actions-supply-chain-compromise/), so CI installs Trivy v0.69.3 (a release that predates the incident) from its `.deb` package, verified against a pinned SHA-256, instead of using `trivy-action`. gitleaks is installed the same way.
 
 ---
 
@@ -206,13 +228,15 @@ This project is a demonstration of the described patterns and is not hardened fo
 - TLS is not configured between internal services; all inter-service traffic is unencrypted, which is acceptable for local demonstration only.
 - `waf/apisix.yaml` documents the intended WAF routes (rate limiting, IP blocklist, path-based filtering) as a human-readable reference. APISIX runs in `traditional` mode with etcd as the config store, so this file is never read at runtime — `waf/provision-routes.sh` is what actually pushes the equivalent rules into etcd via the Admin API (see [§4.3](#43-post-deployment-hardening)). Verified live: 100 req/min rate limiting (HTTP 429 past the threshold), blocked file-extension and path-traversal probes (HTTP 403/400).
 - The APISIX Admin API (port `9180`) is bound to `127.0.0.1` only in `docker-compose.yml`, not `0.0.0.0` — Docker's default would otherwise expose route-modification access to the local network. `waf/config.yaml`'s `allow_admin` list is intentionally broadened to include the Docker bridge subnet (`172.16.0.0/12`), since traffic from the host reaches the container under that range, not `127.0.0.1`; this is safe only because the host-level binding already blocks all non-local access. MongoDB, PostgreSQL and etcd are bound to `127.0.0.1` the same way; MongoDB and etcd run without authentication in this demo, so they must never be published on a non-local interface.
+- The `cdc` and `generator` containers run as root (no `USER` instruction in their Dockerfiles). Trivy reports this as a HIGH misconfiguration (DS-0002) in the non-blocking CI report; running them as a non-root user is on the [Roadmap](#8-roadmap).
 
 ---
 
 ## 8. Roadmap
 
 - Replace rule-based detection with a trained anomaly-scoring model
-- Extend the CI pipeline with automated integration tests against a running stack
+- Extend the integration test to the full stack (Grafana alert rules, APISIX WAF routes) so infrastructure image updates are validated too
+- Run the application containers as a non-root user
 - Add a cloud deployment variant using managed MongoDB and PostgreSQL
 - Integrate an external threat intelligence feed (e.g., AbuseIPDB)
 - Add simulated incident resolution so long-running demos reflect closed incidents
