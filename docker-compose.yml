@@ -2,7 +2,7 @@ services:
 
   # ── MongoDB Replica Set (required for CDC Change Streams) ──────────────
   mongo1:
-    image: mongo:7
+    image: mongo:9
     container_name: mongo1
     command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
@@ -15,7 +15,7 @@ services:
 
   # ── MongoDB Replica Set initializer ───────────────────────────────────
   mongo-init:
-    image: mongo:7
+    image: mongo:9
     container_name: mongo-init
     depends_on:
       - mongo1
